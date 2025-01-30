@@ -1,0 +1,7 @@
+/target
+*~
+*.txt
+*.csv
+*.parquet
+Cargo.lock
+
