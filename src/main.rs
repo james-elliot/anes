@@ -186,7 +186,8 @@ fn compute2(
     obj_l: &mut std::io::BufWriter<std::fs::File>,
     sou_t: &mut std::io::BufWriter<std::fs::File>,
     obj_t: &mut std::io::BufWriter<std::fs::File>,
-    kind_select: &KindSelect,kind_norm: &KindNormalize,p: f64,n_min: usize,ind: usize) {
+    kind_select: &KindSelect,kind_norm: &KindNormalize,p: f64,n_min: usize,ind: usize) -> u64 {
+    let mut n_tot=0;
     let (sou, obj) = if (rng.gen_range(0.0..1.0)) < p {(sou_l, obj_l)} else {(sou_t, obj_t)};
     let (mut sump, mut sump2, mut np) = (0.0, 0.0, 0);
     for v in tab {
@@ -204,6 +205,7 @@ fn compute2(
             if cond {
                 n3 += 1;
                 if n3 >= n_min {
+		    n_tot+=1;
                     let t = f(&tab[i - ind]).unwrap();
                     let mpl = (sump - t) / ((np - 1) as f64);
                     let mpl2 = (sump2 - t * t) / ((np - 1) as f64);
@@ -228,6 +230,7 @@ fn compute2(
         }
 	else {n3 = 0;}
     }
+    n_tot
 }
 
 use std::io::BufRead;
@@ -420,12 +423,15 @@ fn main() {
 	eprintln!("mean={:?} sigma={:?}", m, s);
 	let n_min = before + after + 1;
 	let ind = before;
+	let mut n_tot = 0;
 	for v in &res {
-            compute2(
+            n_tot += compute2(
 		v,*func,m,s,&mut rng,&mut sou_l,&mut obj_l,&mut sou_t,&mut obj_t,
 		&kind_select,&kind_normalize,proba,n_min,ind);
 	}
+	eprintln!("sequences written={}",n_tot);
     }
+    // Now let's check files are OK and compute coefs and RMSE for least square method
     let (v1,rows,cols) = read_numbers_from_file("../anes/source_learn.txt").unwrap();
     let a = DMatrix::from_row_slice(rows,cols,&v1);
     let (v2,rows2,cols2) = read_numbers_from_file("../anes/obj_learn.txt").unwrap();
@@ -434,7 +440,8 @@ fn main() {
     let epsilon = 1e-14;
     let results = lstsq::lstsq(&a, &b, epsilon).unwrap();
     let x = results.solution;
-    println!("coefs: {:?}\nRMSE_learn: {:?}",x.data.as_vec(),(results.residuals/(rows as f64)).sqrt());
+    let sum = x.sum();
+    eprintln!("coefs: {:?}\nsum: {} RMSE_learn: {}",x.data.as_vec(),sum,(results.residuals/(rows as f64)).sqrt());
     
     let (v1,rows,cols) = read_numbers_from_file("../anes/source_test.txt").unwrap();
     let a = DMatrix::from_row_slice(rows,cols,&v1);
@@ -444,5 +451,5 @@ fn main() {
     let r = a*x-b;
     let n = r.norm();
     let v = (n*n / (rows as f64)).sqrt();
-    println!("RMSE_test: {:?}",v);
+    eprintln!("RMSE_test: {:?}",v);
 }

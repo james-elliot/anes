@@ -47,11 +47,11 @@ for t in range(200000):
     loss.backward()
     optimizer.step()
     if t % 100 == 99:
-        print(t, loss.item())
+        print(t, "MSE_learn:",loss.item())
         y_pred_test = model(x_test)
         loss2 = loss_fn(y_pred_test, y_test)
         v=loss2.item()
-        print(t, " MSE:",v," RMSE:",math.sqrt(v))
+        print(t, "RMSE_test:",math.sqrt(v))
         if loss.item()<1e-6:break
 y_pred=model(x)
 print(x)
