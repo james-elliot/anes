@@ -1,9 +1,9 @@
 use std::io::Write;
 
 #[allow(non_snake_case)]
-#[allow(dead_code)]
 #[derive(Debug, serde::Deserialize)]
-struct AnesCsv {
+#[allow(dead_code)]
+struct DataCsv {
     N: u64,
     encounterId: u64,
     intervalle: u64,
@@ -17,7 +17,6 @@ struct AnesCsv {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 struct Data {
     heart_rate: Option<f64>,
     temp: Option<f64>,
@@ -39,28 +38,19 @@ enum KindNormalize {
     Tainted,
 }
 
-fn is_empty(r: &AnesCsv) -> bool {
-    r.heart_rate.is_none()
-        && r.temp.is_none()
-        && r.pas.is_none()
-        && r.fr.is_none()
-        && r.spo2.is_none()
-        && r.pad.is_none()
-        && r.pam.is_none()
+fn is_empty_csv(r: &DataCsv) -> bool {
+    r.heart_rate.is_none() && r.temp.is_none() && r.pas.is_none()
+        && r.fr.is_none() && r.spo2.is_none() && r.pad.is_none() && r.pam.is_none()
 }
-fn is_empty2(r: &Data) -> bool {
-    r.heart_rate.is_none()
-        && r.temp.is_none()
-        && r.pas.is_none()
-        && r.fr.is_none()
-        && r.spo2.is_none()
-        && r.pad.is_none()
-        && r.pam.is_none()
+fn is_empty_data(r: &Data) -> bool {
+    r.heart_rate.is_none() && r.temp.is_none() && r.pas.is_none()
+        && r.fr.is_none() && r.spo2.is_none() && r.pad.is_none() && r.pam.is_none()
 }
 
-use parquet::file::{serialized_reader::SerializedFileReader, reader::FileReader};
+
 use parquet::record::Field;
-#[allow(dead_code)]
+use parquet::file::serialized_reader::SerializedFileReader;
+use parquet::file::reader::FileReader;
 fn read_parquet(path: &str) -> Vec<Vec<Data>> {
     {
 	let file = std::fs::File::open(path).unwrap();
@@ -104,8 +94,8 @@ fn read_parquet(path: &str) -> Vec<Vec<Data>> {
                 _ =>{},
             }
         }
-	if !tabd.is_empty() || !is_empty2(&r) {
-	    if is_empty2(&r) {n+=1} else {n=0}
+	if !tabd.is_empty() || !is_empty_data(&r) {
+	    if is_empty_data(&r) {n+=1} else {n=0}
 	    tabd.push(r);
 	}
     }
@@ -114,7 +104,6 @@ fn read_parquet(path: &str) -> Vec<Vec<Data>> {
     tab
 }
 
-#[allow(dead_code)]
 fn read_csv(path: &str) -> Vec<Vec<Data>> {
     let mut n2 = 0;
     let mut tab = Vec::new();
@@ -126,7 +115,7 @@ fn read_csv(path: &str) -> Vec<Vec<Data>> {
         .has_headers(true)
         .from_reader(file);
     let mut prev = None;
-    for result in rdr.deserialize::<AnesCsv>() {
+    for result in rdr.deserialize::<DataCsv>() {
         let r = result.unwrap();
         if Some(r.encounterId) != prev {
             if prev.is_some() {
@@ -137,7 +126,7 @@ fn read_csv(path: &str) -> Vec<Vec<Data>> {
             }
             prev = Some(r.encounterId);
         }
-        if !tabd.is_empty() || !is_empty(&r) {
+        if !tabd.is_empty() || !is_empty_csv(&r) {
             let v = Data {
                 heart_rate: r.heart_rate,
                 temp: r.temp,
@@ -148,7 +137,7 @@ fn read_csv(path: &str) -> Vec<Vec<Data>> {
                 pam: r.pam,
             };
             tabd.push(v);
-            if is_empty(&r) {
+            if is_empty_csv(&r) {
                 n2 += 1;
             } else {
                 n2 = 0;
@@ -197,7 +186,7 @@ fn compute2(
     obj_l: &mut std::io::BufWriter<std::fs::File>,
     sou_t: &mut std::io::BufWriter<std::fs::File>,
     obj_t: &mut std::io::BufWriter<std::fs::File>,
-    kind_select: &KindSelect,kind_norm: &KindNormalize,p: f64,n_min: usize,ind: usize){
+    kind_select: &KindSelect,kind_norm: &KindNormalize,p: f64,n_min: usize,ind: usize) {
     let (sou, obj) = if (rng.gen_range(0.0..1.0)) < p {(sou_l, obj_l)} else {(sou_t, obj_t)};
     let (mut sump, mut sump2, mut np) = (0.0, 0.0, 0);
     for v in tab {
@@ -241,6 +230,27 @@ fn compute2(
     }
 }
 
+use std::io::BufRead;
+fn read_numbers_from_file(filename: &str) -> std::io::Result<(Vec<f64>,usize,usize)> {
+//    let path = std::path::Path::new(filename);
+    let file = std::fs::File::open(filename)?;
+    let reader = std::io::BufReader::new(file);
+    let mut numbers = Vec::new();
+    let mut cols = 0;
+    let mut rows = 0;
+    for line in reader.lines() {
+        let line = line?; // Read the line
+        let row_numbers: Vec<f64> = line
+            .split_whitespace() // Split by whitespace
+            .filter_map(|s| s.parse::<f64>().ok()) // Try to parse each number
+            .collect();
+	cols = row_numbers.len();
+        numbers.extend(row_numbers); // Add to the main vector
+	rows+=1;
+    }
+    Ok((numbers,rows,cols))
+}
+
 fn to_file(path: &str, tab: &[usize]) {
     let write_file = std::fs::File::create(path).unwrap();
     let mut writer = std::io::BufWriter::new(&write_file);
@@ -265,6 +275,7 @@ fn get_pam(d: &Data) -> Option<f64> {d.pam}
 
 use argparse::{ArgumentParser, Store, StoreFalse, StoreTrue};
 use std::collections::HashMap;
+use nalgebra::{DMatrix,DVector};
 fn main() {
     let mut fmap = HashMap::new();
     fmap.insert("heart_rate", get_heart_rate as fn(&Data) -> Option<f64>);
@@ -282,10 +293,10 @@ fn main() {
     let mut proba = 0.8;
     let mut before = 5;
     let mut after = 5;
+    let mut seed = 0;
     let mut select_global = true;
     let mut norm_global = false;
     let mut norm_tainted = false;
-//    std::process::exit(0);
     {
         // this block limits scope of borrows by ap.refer() method
         let mut ap = ArgumentParser::new();
@@ -305,11 +316,6 @@ fn main() {
             Store,
             "Name of the variable to process (Default: pam)",
         );
-        ap.refer(&mut fsigma).add_option(
-            &["-f", "--fsigma"],
-            Store,
-            "Sigma multiplier for select (Default: 2.0)",
-        );
         ap.refer(&mut proba).add_option(
             &["-p", "--proba"],
             Store,
@@ -325,6 +331,11 @@ fn main() {
             Store,
             "Number of values after the value to predict (Default: 5)",
         );
+        ap.refer(&mut fsigma).add_option(
+            &["-f", "--fsigma"],
+            Store,
+            "Sigma multiplier for select (Default: 2.0)",
+        );
         ap.refer(&mut select_global).add_option(
             &["-l", "--LocalSelect"],
             StoreFalse,
@@ -333,87 +344,105 @@ fn main() {
         ap.refer(&mut norm_global).add_option(
             &["-g", "--GlobalNormalize"],
             StoreTrue,
-            "Use global normalization for select (default: Local)",
+            "Use global normalization (default: Local)",
         );
         ap.refer(&mut norm_tainted).add_option(
             &["-t", "--TaintedNormalize"],
             StoreTrue,
-            "Use tainted normalization for select (default: Local)",
+            "Use tainted normalization (default: Local)",
+        );
+        ap.refer(&mut seed).add_option(
+            &["-s", "--seed"],
+            Store,
+            "Seed of random number generator (Default: 0)",
         );
         ap.parse_args_or_exit();
     }
-    path =if csv {path+".csv"} else {path+".parquet"};
-    let func = fmap.get(&*fname).unwrap();
-    let kind_select = if select_global {
-        KindSelect::Global(fsigma)
-    } else {
-        KindSelect::Local(fsigma)
-    };
+    path = if csv {path+".csv"} else {path+".parquet"};
+    let func = if let Some(f)=fmap.get(&*fname) {f} else {panic!("invalid variable name")};
+    let kind_select = if select_global {KindSelect::Global(fsigma)}
+    else {KindSelect::Local(fsigma)};
     let kind_normalize = if norm_global {
-        if norm_tainted {
-            eprintln!("Can't have both global and tainted");
-            std::process::exit(0);
-        }
+        if norm_tainted {panic!("Can't have both global and tainted")}
         KindNormalize::Global
-    } else if norm_tainted {
-        KindNormalize::Tainted
-    } else {
-        KindNormalize::Local
-    };
+    }
+    else if norm_tainted {KindNormalize::Tainted}
+    else {KindNormalize::Local};
 
-    let mut rng = Trng::seed_from_u64(0);
-    let write_file = std::fs::File::create("obj_learn.txt").unwrap();
-    let mut obj_l = std::io::BufWriter::new(write_file);
-    let write_file = std::fs::File::create("source_learn.txt").unwrap();
-    let mut sou_l = std::io::BufWriter::new(write_file);
-    let write_file = std::fs::File::create("obj_test.txt").unwrap();
-    let mut obj_t = std::io::BufWriter::new(write_file);
-    let write_file = std::fs::File::create("source_test.txt").unwrap();
-    let mut sou_t = std::io::BufWriter::new(write_file);
-    let mut dist_max_hole = Vec::new();
-    let mut dist_nb_points = Vec::new();
-    let res = if csv {read_csv(&path)} else {read_parquet(&path)};
-    let l = res.len();
-    let mut sum = 0;
-    let (mut sum_all, mut sum2_all, mut n_all) = (0.0, 0.0, 0);
-    for v in &res {
-        sum += v.len();
+    {
+	let mut rng = Trng::seed_from_u64(seed);
+	let write_file = std::fs::File::create("obj_learn.txt").unwrap();
+	let mut obj_l = std::io::BufWriter::new(write_file);
+	let write_file = std::fs::File::create("source_learn.txt").unwrap();
+	let mut sou_l = std::io::BufWriter::new(write_file);
+	let write_file = std::fs::File::create("obj_test.txt").unwrap();
+	let mut obj_t = std::io::BufWriter::new(write_file);
+	let write_file = std::fs::File::create("source_test.txt").unwrap();
+	let mut sou_t = std::io::BufWriter::new(write_file);
+	let mut dist_max_hole = Vec::new();
+	let mut dist_nb_points = Vec::new();
+	let res = if csv {read_csv(&path)} else {read_parquet(&path)};
+	let l = res.len();
+	let mut sum = 0;
+	let (mut sum_all, mut sum2_all, mut n_all) = (0.0, 0.0, 0);
+	for v in &res {
+            sum += v.len();
+	}
+	eprintln!(
+            "nb_patients={} mean_non_zero_rec_by_patient={}",
+            l,
+            (sum as f64) / (l as f64)
+	);
+	for v in &res {
+            let (sum, sum2, n, nmax, sumh, nbh) = compute(v, *func);
+            let (m, m2) = (sum / (n as f64), sum2 / (n as f64));
+            let _s = (m2 - m * m).sqrt();
+            let _mh = (sumh as f64) / (nbh as f64);
+            sum_all += sum;
+            sum2_all += sum2;
+            n_all += n;
+            //        eprintln!(
+            //            "nb={:3} nbnz={:3} m={:5.1} s={:5.1} nmax={:3} nbh={:3} mh={:3.1}",
+            //            v.len(),n,m,s,nmax,nbh,mh);
+            dist_max_hole = update(dist_max_hole, nmax);
+            dist_nb_points = update(dist_nb_points, n);
+	}
+	to_file("dist_max_hole.txt", &dist_max_hole);
+	to_file("dist_nb_points.txt", &dist_nb_points);
+	eprintln!(
+            "nb_patients_with_holes={} mean_non_zero_rec_by_patient={}",
+            l - dist_max_hole[0],
+            (n_all as f64) / (l as f64)
+	);
+	let m = sum_all / (n_all as f64);
+	let m2 = sum2_all / (n_all as f64);
+	let s = (m2 - m * m).sqrt();
+	eprintln!("mean={:?} sigma={:?}", m, s);
+	let n_min = before + after + 1;
+	let ind = before;
+	for v in &res {
+            compute2(
+		v,*func,m,s,&mut rng,&mut sou_l,&mut obj_l,&mut sou_t,&mut obj_t,
+		&kind_select,&kind_normalize,proba,n_min,ind);
+	}
     }
-    eprintln!(
-        "nb_patients={} mean_non_zero_rec_by_patient={}",
-        l,
-        (sum as f64) / (l as f64)
-    );
-    for v in &res {
-        let (sum, sum2, n, nmax, sumh, nbh) = compute(v, *func);
-        let (m, m2) = (sum / (n as f64), sum2 / (n as f64));
-        let _s = (m2 - m * m).sqrt();
-        let _mh = (sumh as f64) / (nbh as f64);
-        sum_all += sum;
-        sum2_all += sum2;
-        n_all += n;
-        //        eprintln!(
-        //            "nb={:3} nbnz={:3} m={:5.1} s={:5.1} nmax={:3} nbh={:3} mh={:3.1}",
-        //            v.len(),n,m,s,nmax,nbh,mh);
-        dist_max_hole = update(dist_max_hole, nmax);
-        dist_nb_points = update(dist_nb_points, n);
-    }
-    to_file("dist_max_hole.txt", &dist_max_hole);
-    to_file("dist_nb_points.txt", &dist_nb_points);
-    eprintln!(
-        "nb_patients_with_holes={} mean_non_zero_rec_by_patient={}",
-        l - dist_max_hole[0],
-        (n_all as f64) / (l as f64)
-    );
-    let m = sum_all / (n_all as f64);
-    let m2 = sum2_all / (n_all as f64);
-    let s = (m2 - m * m).sqrt();
-    eprintln!("mean={:?} sigma={:?}", m, s);
-    let n_min = before + after + 1;
-    let ind = before;
-    for v in &res {
-        compute2(
-	    v,*func,m,s,&mut rng,&mut sou_l,&mut obj_l,&mut sou_t,&mut obj_t,
-	    &kind_select,&kind_normalize,proba,n_min,ind);
-    }
+    let (v1,rows,cols) = read_numbers_from_file("../anes/source_learn.txt").unwrap();
+    let a = DMatrix::from_row_slice(rows,cols,&v1);
+    let (v2,rows2,cols2) = read_numbers_from_file("../anes/obj_learn.txt").unwrap();
+    if cols2!=1 || rows2!=rows {panic!("zorglub")}
+    let b = DVector::from_row_slice(&v2);
+    let epsilon = 1e-14;
+    let results = lstsq::lstsq(&a, &b, epsilon).unwrap();
+    let x = results.solution;
+    println!("coefs: {:?}\nRMSE_learn: {:?}",x.data.as_vec(),(results.residuals/(rows as f64)).sqrt());
+    
+    let (v1,rows,cols) = read_numbers_from_file("../anes/source_test.txt").unwrap();
+    let a = DMatrix::from_row_slice(rows,cols,&v1);
+    let (v2,rows2,cols2) = read_numbers_from_file("../anes/obj_test.txt").unwrap();
+    if cols2!=1 || rows2!=rows {panic!("zorglub")}
+    let b = DVector::from_row_slice(&v2);
+    let r = a*x-b;
+    let n = r.norm();
+    let v = (n*n / (rows as f64)).sqrt();
+    println!("RMSE_test: {:?}",v);
 }
