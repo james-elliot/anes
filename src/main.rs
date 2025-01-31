@@ -1,4 +1,5 @@
 use std::io::Write;
+
 #[allow(non_snake_case)]
 #[allow(dead_code)]
 #[derive(Debug, serde::Deserialize)]
@@ -47,26 +48,52 @@ fn is_empty(r: &AnesCsv) -> bool {
         && r.pad.is_none()
         && r.pam.is_none()
 }
+fn is_empty2(r: &Data) -> bool {
+    r.heart_rate.is_none()
+        && r.temp.is_none()
+        && r.pas.is_none()
+        && r.fr.is_none()
+        && r.spo2.is_none()
+        && r.pad.is_none()
+        && r.pam.is_none()
+}
 
-use parquet::file::reader::{FileReader, SerializedFileReader};
-use parquet::record::{Row,RowAccessor,Field};
+use parquet::file::{serialized_reader::SerializedFileReader, reader::FileReader};
+use parquet::record::Field;
 #[allow(dead_code)]
-fn read_parquet2() {
+fn read_parquet(path: &str) -> Vec<Vec<Data>> {
+    {
+	let file = std::fs::File::open(path).unwrap();
+	let builder = parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
+	println!("Converted arrow schema is: {}", builder.schema());
+    }
+    let mut tab = Vec::new();
+    let mut prev:Option<u64> = None;
+    let mut tabd = Vec::new();
+    let mut n = 0;
     let file = std::fs::File::open("one_week.parquet").unwrap();
     let reader = SerializedFileReader::new(file).unwrap();
     let iter = reader.get_row_iter(None).unwrap();
-    println!("Records in Parquet file:");
-    // Iterate through records and print x, y values
     for row in iter {
         let vect = row.unwrap().into_columns();
 //        println!("{:?}",vect);
-        let mut r = AnesCsv {
-            N: 0,encounterId: 0,intervalle: 0,heart_rate: None,
-            temp: None,pas: None,fr: None,spo2: None,pad: None,pam: None};
+        let mut r = Data
+        {heart_rate: None,temp: None,pas: None,fr: None,spo2: None,pad: None,pam: None};
         for (name,v) in vect {
             match name.as_str() {
-                "encounterId" => if let Field::Str(f)=v {r.encounterId=f.parse().unwrap()},
-                "intervalle" => if let Field::Long(f)=v {r.intervalle=f as u64},
+                "encounterId" => if let Field::Str(f)=v {
+		    let id=Some (f.parse().unwrap());
+		    if id != prev {
+			if  prev.is_some() {
+			    tabd.truncate(tabd.len()-n);
+			    tab.push(tabd);
+			    tabd = Vec::new();
+			    n=0;
+			}
+			prev=id;
+		    }
+		},
+//                "intervalle" => if let Field::Long(f)=v {r.intervalle=f as u64},
                 "heart_rate" => if let Field::Double(f)=v {r.heart_rate=Some(f)},
                 "temp" => if let Field::Double(f)=v {r.temp=Some(f)},
                 "pas" => if let Field::Double(f)=v {r.pas=Some(f)},
@@ -77,35 +104,19 @@ fn read_parquet2() {
                 _ =>{},
             }
         }
-//        println!("x: {:?}", r);
-//        let temp = match row.unwrap().get_double(2) {
-//            Ok(v) =>Some(v),
-//            Err(_)=>None
-//        };
+	if !tabd.is_empty() || !is_empty2(&r) {
+	    if is_empty2(&r) {n+=1} else {n=0}
+	    tabd.push(r);
+	}
     }
-}
-#[allow(dead_code)]
-fn read_parquet() {
-    let file = std::fs::File::open("one_week.parquet").unwrap();
-    let builder =
-        parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
-    println!("Converted arrow schema is: {}", builder.schema());
-    let mut reader = builder.build().unwrap();
-    let record_batch = reader.next().unwrap().unwrap();
-    println!("Read {} records.", record_batch.num_rows());
-    let record_batch = reader.next().unwrap().unwrap();
-    println!("Read {} records.", record_batch.num_rows());
-    println!("{} columns.", record_batch.num_columns());
-    let col = record_batch.column_by_name("pam");
-    if let Some(_r) = col {
-        //        let v = std::sync::Arc::get_mut(r.clone());
-        //        println!("{:?}", v);
-    }
+    tabd.truncate(tabd.len() - n);
+    tab.push(tabd);
+    tab
 }
 
-fn read_anes(path: &str) -> Vec<Vec<Data>> {
+#[allow(dead_code)]
+fn read_csv(path: &str) -> Vec<Vec<Data>> {
     let mut n2 = 0;
-    let mut _cpt = 0;
     let mut tab = Vec::new();
     let mut tabd = Vec::new();
     let file = std::fs::File::open(path).unwrap();
@@ -119,12 +130,9 @@ fn read_anes(path: &str) -> Vec<Vec<Data>> {
         let r = result.unwrap();
         if Some(r.encounterId) != prev {
             if prev.is_some() {
-                if n2 != 0 {
-                    tabd.truncate(tabd.len() - n2);
-                }
+                tabd.truncate(tabd.len() - n2);
                 tab.push(tabd);
                 tabd = Vec::new();
-                _cpt = 0;
                 n2 = 0;
             }
             prev = Some(r.encounterId);
@@ -139,7 +147,6 @@ fn read_anes(path: &str) -> Vec<Vec<Data>> {
                 pad: r.pad,
                 pam: r.pam,
             };
-            //            println!("cpt={:?} n2={:?} v={:?}",cpt,n2,v);
             tabd.push(v);
             if is_empty(&r) {
                 n2 += 1;
@@ -147,65 +154,36 @@ fn read_anes(path: &str) -> Vec<Vec<Data>> {
                 n2 = 0;
             }
         }
-        _cpt += 1;
-        //        println!("{:?}",r);
     }
-    if n2 != 0 {
-        tabd.truncate(tabd.len() - n2);
-    }
+    tabd.truncate(tabd.len() - n2);
     tab.push(tabd);
     tab
 }
 
 fn compute(
-    tab: &Vec<Data>,
-    f: fn(&Data) -> Option<f64>,
-) -> (f64, f64, usize, usize, usize, usize) {
+    tab: &Vec<Data>,f: fn(&Data) -> Option<f64>)
+    -> (f64, f64, usize, usize, usize, usize) {
     let (mut sum, mut sum2, mut n) = (0.0, 0.0, 0);
     let mut n2: usize = 0;
     let (mut nmax, mut nbh, mut sumh) = (0, 0, 0);
     for v in tab {
         if let Some(r) = f(v) {
-            sum += r;
-            sum2 += r * r;
-            n += 1;
-            if n2 != 0 {
-                nbh += 1;
-                sumh += n2;
-                n2 = 0;
-            }
-        } else {
-            n2 += 1;
-            if n2 > nmax {
-                nmax = n2;
-            }
+            sum += r; sum2 += r * r; n += 1;
+            if n2 != 0 {nbh += 1;sumh += n2;n2 = 0;}
         }
+	else {n2 += 1;if n2 > nmax {nmax = n2}}
     }
-    if n2 != 0 {
-        nbh += 1;
-        sumh += n2;
-    }
+    if n2 != 0 {nbh += 1;sumh += n2;}
     (sum, sum2, n, nmax, sumh, nbh)
 }
 
 fn export(
-    tab: &[Data],
-    f: fn(&Data) -> Option<f64>,
-    n: usize,
-    n_min: usize,
-    ind: usize,
-    m: f64,
-    s: f64,
+    tab: &[Data],f: fn(&Data) -> Option<f64>,n: usize,n_min: usize,ind: usize,m: f64,s: f64,
     sou: &mut std::io::BufWriter<std::fs::File>,
-    obj: &mut std::io::BufWriter<std::fs::File>,
-) {
+    obj: &mut std::io::BufWriter<std::fs::File>) {
     for j in 0..n_min {
         let v = (f(&tab[n - j]).unwrap() - m) / s;
-        if j == ind {
-            writeln!(obj, "{}", v).unwrap();
-        } else {
-            write!(sou, "{} ", v).unwrap();
-        }
+        if j == ind {writeln!(obj, "{}", v).unwrap();} else {write!(sou, "{} ", v).unwrap();}
     }
     writeln!(sou).unwrap();
 }
@@ -214,33 +192,16 @@ use rand::{Rng, SeedableRng};
 pub type Trng = rand_chacha::ChaCha8Rng;
 
 fn compute2(
-    tab: &[Data],
-    f: fn(&Data) -> Option<f64>,
-    mt: f64,
-    st: f64,
-    rng: &mut Trng,
+    tab: &[Data],f: fn(&Data) -> Option<f64>,mt: f64,st: f64,rng: &mut Trng,
     sou_l: &mut std::io::BufWriter<std::fs::File>,
     obj_l: &mut std::io::BufWriter<std::fs::File>,
     sou_t: &mut std::io::BufWriter<std::fs::File>,
     obj_t: &mut std::io::BufWriter<std::fs::File>,
-    kind_select: &KindSelect,
-    kind_norm: &KindNormalize,
-    p: f64,
-    n_min: usize,
-    ind: usize,
-) {
-    let (sou, obj) = if (rng.gen_range(0.0..1.0)) < p {
-        (sou_l, obj_l)
-    } else {
-        (sou_t, obj_t)
-    };
+    kind_select: &KindSelect,kind_norm: &KindNormalize,p: f64,n_min: usize,ind: usize){
+    let (sou, obj) = if (rng.gen_range(0.0..1.0)) < p {(sou_l, obj_l)} else {(sou_t, obj_t)};
     let (mut sump, mut sump2, mut np) = (0.0, 0.0, 0);
     for v in tab {
-        if let Some(r) = f(v) {
-            sump += r;
-            sump2 += r * r;
-            np += 1;
-        }
+        if let Some(r) = f(v) {sump += r; sump2 += r * r; np += 1;}
     }
     let (mp, mp2) = (sump / (np as f64), sump2 / (np as f64));
     let sp = (mp2 - mp * mp).sqrt();
@@ -273,12 +234,10 @@ fn compute2(
                         KindNormalize::Tainted => export(tab, f, i, n_min, ind, ml, sl, sou, obj),
                     }
                 }
-            } else {
-                n3 = 0;
             }
-        } else {
-            n3 = 0;
+	    else {n3 = 0;}
         }
+	else {n3 = 0;}
     }
 }
 
@@ -286,41 +245,23 @@ fn to_file(path: &str, tab: &[usize]) {
     let write_file = std::fs::File::create(path).unwrap();
     let mut writer = std::io::BufWriter::new(&write_file);
     for (i, v) in tab.iter().enumerate() {
-        if i != 0 {
-            writeln!(&mut writer, "{} {}", i, v).unwrap();
-        }
+        if i != 0 {writeln!(&mut writer, "{} {}", i, v).unwrap();}
     }
 }
 
 fn update(mut tab: Vec<usize>, v: usize) -> Vec<usize> {
-    if (1 + v) > tab.len() {
-        tab.resize(1 + v, 0);
-    }
+    if (1 + v) > tab.len() {tab.resize(1 + v, 0);}
     tab[v] += 1;
     tab
 }
 
-fn get_heart_rate(d: &Data) -> Option<f64> {
-    d.heart_rate
-}
-fn get_temp(d: &Data) -> Option<f64> {
-    d.temp
-}
-fn get_pas(d: &Data) -> Option<f64> {
-    d.pas
-}
-fn get_fr(d: &Data) -> Option<f64> {
-    d.fr
-}
-fn get_spo2(d: &Data) -> Option<f64> {
-    d.spo2
-}
-fn get_pad(d: &Data) -> Option<f64> {
-    d.pad
-}
-fn get_pam(d: &Data) -> Option<f64> {
-    d.pam
-}
+fn get_heart_rate(d: &Data) -> Option<f64> {d.heart_rate}
+fn get_temp(d: &Data) -> Option<f64> {d.temp}
+fn get_pas(d: &Data) -> Option<f64> {d.pas}
+fn get_fr(d: &Data) -> Option<f64> {d.fr}
+fn get_spo2(d: &Data) -> Option<f64> {d.spo2}
+fn get_pad(d: &Data) -> Option<f64> {d.pad}
+fn get_pam(d: &Data) -> Option<f64> {d.pam}
 
 use argparse::{ArgumentParser, Store, StoreFalse, StoreTrue};
 use std::collections::HashMap;
@@ -335,6 +276,8 @@ fn main() {
     fmap.insert("pam", get_pam as fn(&Data) -> Option<f64>);
 
     let mut fname = "pam".to_string();
+    let mut path = "one_week".to_string();
+    let mut csv = false;
     let mut fsigma = 2.0;
     let mut proba = 0.8;
     let mut before = 5;
@@ -342,37 +285,45 @@ fn main() {
     let mut select_global = true;
     let mut norm_global = false;
     let mut norm_tainted = false;
-//    read_parquet();
-    read_parquet2();
-        std::process::exit(0);
+//    std::process::exit(0);
     {
         // this block limits scope of borrows by ap.refer() method
         let mut ap = ArgumentParser::new();
         ap.set_description("Pre-processing of anes dataset");
+        ap.refer(&mut path).add_option(
+            &["-f", "--file"],
+            Store,
+            "Name of the file (without extension) to load (Default: one_week)",
+        );
+        ap.refer(&mut csv).add_option(
+            &["-c", "--csv"],
+            StoreTrue,
+            "Use csv format instead of parquet format (default: false)",
+        );
         ap.refer(&mut fname).add_option(
             &["-n", "--name"],
             Store,
-            "Name of the variable to process (Default:pam)",
+            "Name of the variable to process (Default: pam)",
         );
         ap.refer(&mut fsigma).add_option(
             &["-f", "--fsigma"],
             Store,
-            "Sigma multiplier for select (Default:2.0)",
+            "Sigma multiplier for select (Default: 2.0)",
         );
         ap.refer(&mut proba).add_option(
             &["-p", "--proba"],
             Store,
-            "Percentage of the dataset used for learning (Default:0.8)",
+            "Percentage of the dataset used for learning (Default: 0.8)",
         );
         ap.refer(&mut before).add_option(
             &["-b", "--before"],
             Store,
-            "Number of values before the value to predict (Default:5)",
+            "Number of values before the value to predict (Default: 5)",
         );
         ap.refer(&mut after).add_option(
             &["-a", "--after"],
             Store,
-            "Number of values after the value to predict (Default:5)",
+            "Number of values after the value to predict (Default: 5)",
         );
         ap.refer(&mut select_global).add_option(
             &["-l", "--LocalSelect"],
@@ -391,6 +342,7 @@ fn main() {
         );
         ap.parse_args_or_exit();
     }
+    path =if csv {path+".csv"} else {path+".parquet"};
     let func = fmap.get(&*fname).unwrap();
     let kind_select = if select_global {
         KindSelect::Global(fsigma)
@@ -420,7 +372,7 @@ fn main() {
     let mut sou_t = std::io::BufWriter::new(write_file);
     let mut dist_max_hole = Vec::new();
     let mut dist_nb_points = Vec::new();
-    let res = read_anes("one_week.csv");
+    let res = if csv {read_csv(&path)} else {read_parquet(&path)};
     let l = res.len();
     let mut sum = 0;
     let (mut sum_all, mut sum2_all, mut n_all) = (0.0, 0.0, 0);
@@ -435,8 +387,8 @@ fn main() {
     for v in &res {
         let (sum, sum2, n, nmax, sumh, nbh) = compute(v, *func);
         let (m, m2) = (sum / (n as f64), sum2 / (n as f64));
-        let s = (m2 - m * m).sqrt();
-        let mh = (sumh as f64) / (nbh as f64);
+        let _s = (m2 - m * m).sqrt();
+        let _mh = (sumh as f64) / (nbh as f64);
         sum_all += sum;
         sum2_all += sum2;
         n_all += n;
@@ -461,20 +413,7 @@ fn main() {
     let ind = before;
     for v in &res {
         compute2(
-            v,
-            *func,
-            m,
-            s,
-            &mut rng,
-            &mut sou_l,
-            &mut obj_l,
-            &mut sou_t,
-            &mut obj_t,
-            &kind_select,
-            &kind_normalize,
-            proba,
-            n_min,
-            ind,
-        );
+	    v,*func,m,s,&mut rng,&mut sou_l,&mut obj_l,&mut sou_t,&mut obj_t,
+	    &kind_select,&kind_normalize,proba,n_min,ind);
     }
 }
