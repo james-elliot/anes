@@ -1,6 +1,6 @@
 # anes
 
-To compile the Rust program:
+To download all dependencies and compile the Rust program:
 
   `cargo b --release`
 
