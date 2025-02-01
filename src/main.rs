@@ -441,7 +441,12 @@ fn main() {
     let results = lstsq::lstsq(&a, &b, epsilon).unwrap();
     let x = results.solution;
     let sum = x.sum();
-    eprintln!("coefs: {:?}\nsum: {} RMSE_learn: {}",x.data.as_vec(),sum,(results.residuals/(rows as f64)).sqrt());
+    for (i,v) in x.data.as_vec().into_iter().enumerate() {
+	let mut n = (i as i64)-(before as i64);
+	if n>=0 {n+=1};
+	eprintln!("{:3}h:{:7.4}",n,v);
+    }
+    eprintln!("coeffs sum: {}\nRMSE_learn: {}",sum,(results.residuals/(rows as f64)).sqrt());
     
     let (v1,rows,cols) = read_numbers_from_file("../anes/source_test.txt").unwrap();
     let a = DMatrix::from_row_slice(rows,cols,&v1);
@@ -451,5 +456,5 @@ fn main() {
     let r = a*x-b;
     let n = r.norm();
     let v = (n*n / (rows as f64)).sqrt();
-    eprintln!("RMSE_test: {:?}",v);
+    eprintln!("RMSE_test : {:?}",v);
 }
