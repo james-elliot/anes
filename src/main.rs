@@ -448,14 +448,21 @@ fn main() {
 	eprintln!("{:3}h:{:7.4}",n,v);
     }
     eprintln!("coeffs sum: {}\nRMSE_learn: {}",sum,(results.residuals/(rows as f64)).sqrt());
-    
+
     let (v1,rows,cols) = read_numbers_from_file("../anes/source_test.txt").unwrap();
     let a = DMatrix::from_row_slice(rows,cols,&v1);
     let (v2,rows2,cols2) = read_numbers_from_file("../anes/obj_test.txt").unwrap();
     if cols2!=1 || rows2!=rows {panic!("zorglub")}
     let b = DVector::from_row_slice(&v2);
-    let r = a*x-b;
+    let r = &a * &x - &b;
     let n = r.norm();
     let v = (n*n / (rows as f64)).sqrt();
     eprintln!("RMSE_test : {:?}",v);
+
+//    let nx = DVector::from_element(cols,1.0);
+    let nx = &x / sum;
+    let r = &a * &nx - &b;
+    let n = r.norm();
+    let v = (n*n / (rows as f64)).sqrt();
+    eprintln!("norm_vec:{:?}\nRMSE_test_norm_vec: {:?}",nx.data.as_vec(),v);
 }
