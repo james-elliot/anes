@@ -61,7 +61,7 @@ fn read_parquet(path: &str) -> Vec<Vec<Data>> {
     let mut prev:Option<u64> = None;
     let mut tabd = Vec::new();
     let mut n = 0;
-    let file = std::fs::File::open("one_week.parquet").unwrap();
+    let file = std::fs::File::open(path).unwrap();
     let reader = SerializedFileReader::new(file).unwrap();
     let iter = reader.get_row_iter(None).unwrap();
     for row in iter {
@@ -384,6 +384,7 @@ fn main() {
 	let mut sou_t = std::io::BufWriter::new(write_file);
 	let mut dist_max_hole = Vec::new();
 	let mut dist_nb_points = Vec::new();
+        println!("path={:?}",path);
 	let res = if csv {read_csv(&path)} else {read_parquet(&path)};
 	let l = res.len();
 	let mut sum = 0;
