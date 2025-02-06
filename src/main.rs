@@ -66,7 +66,7 @@ fn read_parquet(path: &str) -> Vec<Vec<Data>> {
     let iter = reader.get_row_iter(None).unwrap();
     for row in iter {
         let vect = row.unwrap().into_columns();
-//        println!("{:?}",vect);
+        //        println!("{:?}",vect);
         let mut r = Data
         {heart_rate: None,temp: None,pas: None,fr: None,spo2: None,pad: None,pam: None};
         for (name,v) in vect {
@@ -83,7 +83,7 @@ fn read_parquet(path: &str) -> Vec<Vec<Data>> {
 			prev=id;
 		    }
 		},
-//                "intervalle" => if let Field::Long(f)=v {r.intervalle=f as u64},
+                //                "intervalle" => if let Field::Long(f)=v {r.intervalle=f as u64},
                 "heart_rate" => if let Field::Double(f)=v {r.heart_rate=Some(f)},
                 "temp" => if let Field::Double(f)=v {r.temp=Some(f)},
                 "pas" => if let Field::Double(f)=v {r.pas=Some(f)},
@@ -167,14 +167,17 @@ fn compute(
 }
 
 fn export(
-    tab: &[Data],f: fn(&Data) -> Option<f64>,n: usize,n_min: usize,ind: usize,m: f64,s: f64,
+    tab: &[Data],f: fn(&Data) -> Option<f64>,
+    n: usize,n_min: usize,ind: usize,nb_holes:usize, m: f64,s: f64,
     sou: &mut std::io::BufWriter<std::fs::File>,
     obj: &mut std::io::BufWriter<std::fs::File>) {
     for j in 0..n_min {
         let v = (f(&tab[n - j]).unwrap() - m) / s;
-        if j == ind {writeln!(obj, "{}", v).unwrap();} else {write!(sou, "{} ", v).unwrap();}
+        if (j >= ind) && (j<ind+nb_holes) {write!(obj, "{} ", v).unwrap();}
+        else {write!(sou, "{} ", v).unwrap();}
     }
     writeln!(sou).unwrap();
+    writeln!(obj).unwrap();
 }
 
 use rand::{Rng, SeedableRng};
@@ -186,7 +189,8 @@ fn compute2(
     obj_l: &mut std::io::BufWriter<std::fs::File>,
     sou_t: &mut std::io::BufWriter<std::fs::File>,
     obj_t: &mut std::io::BufWriter<std::fs::File>,
-    kind_select: &KindSelect,kind_norm: &KindNormalize,p: f64,n_min: usize,ind: usize) -> u64 {
+    kind_select: &KindSelect,kind_norm: &KindNormalize,
+    p: f64,n_min: usize,ind: usize,nb_holes:usize) -> u64 {
     let mut n_tot=0;
     let (sou, obj) = if (rng.gen_range(0.0..1.0)) < p {(sou_l, obj_l)} else {(sou_t, obj_t)};
     let (mut sump, mut sump2, mut np) = (0.0, 0.0, 0);
@@ -220,9 +224,9 @@ fn compute2(
                     let ml2 = (suml2 - t * t) / ((n_min - 1) as f64);
                     let sl = (ml2 - ml * ml).sqrt();
                     match kind_norm {
-                        KindNormalize::Global => export(tab, f, i, n_min, ind, mt, st, sou, obj),
-                        KindNormalize::Local => export(tab, f, i, n_min, ind, mpl, spl, sou, obj),
-                        KindNormalize::Tainted => export(tab, f, i, n_min, ind, ml, sl, sou, obj),
+                        KindNormalize::Global => export(tab, f, i, n_min, ind, nb_holes, mt, st, sou, obj),
+                        KindNormalize::Local => export(tab, f, i, n_min, ind, nb_holes, mpl, spl, sou, obj),
+                        KindNormalize::Tainted => export(tab, f, i, n_min, ind, nb_holes, ml, sl, sou, obj),
                     }
                 }
             }
@@ -235,7 +239,7 @@ fn compute2(
 
 use std::io::BufRead;
 fn read_numbers_from_file(filename: &str) -> std::io::Result<(Vec<f64>,usize,usize)> {
-//    let path = std::path::Path::new(filename);
+    //    let path = std::path::Path::new(filename);
     let file = std::fs::File::open(filename)?;
     let reader = std::io::BufReader::new(file);
     let mut numbers = Vec::new();
@@ -279,6 +283,7 @@ fn get_pam(d: &Data) -> Option<f64> {d.pam}
 use argparse::{ArgumentParser, Store, StoreFalse, StoreTrue};
 use std::collections::HashMap;
 use nalgebra::{DMatrix,DVector};
+
 fn main() {
     let mut fmap = HashMap::new();
     fmap.insert("heart_rate", get_heart_rate as fn(&Data) -> Option<f64>);
@@ -300,6 +305,7 @@ fn main() {
     let mut select_global = true;
     let mut norm_global = false;
     let mut norm_tainted = false;
+    let mut nb_holes = 1;
     {
         // this block limits scope of borrows by ap.refer() method
         let mut ap = ArgumentParser::new();
@@ -323,6 +329,11 @@ fn main() {
             &["-p", "--proba"],
             Store,
             "Percentage of the dataset used for learning (Default: 0.8)",
+        );
+        ap.refer(&mut nb_holes).add_option(
+            &["-m", "--missing"],
+            Store,
+            "Number of consecutive missing values to predict (Default: 1)",
         );
         ap.refer(&mut before).add_option(
             &["-b", "--before"],
@@ -422,13 +433,13 @@ fn main() {
 	let m2 = sum2_all / (n_all as f64);
 	let s = (m2 - m * m).sqrt();
 	eprintln!("mean={:?} sigma={:?}", m, s);
-	let n_min = before + after + 1;
-	let ind = before;
+	let n_min = before + after + nb_holes;
 	let mut n_tot = 0;
 	for v in &res {
             n_tot += compute2(
-		v,*func,m,s,&mut rng,&mut sou_l,&mut obj_l,&mut sou_t,&mut obj_t,
-		&kind_select,&kind_normalize,proba,n_min,ind);
+		v,*func,m,s,&mut rng,
+                &mut sou_l,&mut obj_l,&mut sou_t,&mut obj_t,
+		&kind_select,&kind_normalize,proba,n_min,before,nb_holes);
 	}
 	eprintln!("sequences written={}",n_tot);
     }
@@ -436,33 +447,47 @@ fn main() {
     let (v1,rows,cols) = read_numbers_from_file("../anes/source_learn.txt").unwrap();
     let a = DMatrix::from_row_slice(rows,cols,&v1);
     let (v2,rows2,cols2) = read_numbers_from_file("../anes/obj_learn.txt").unwrap();
-    if cols2!=1 || rows2!=rows {panic!("zorglub")}
-    let b = DVector::from_row_slice(&v2);
-    let epsilon = 1e-14;
-    let results = lstsq::lstsq(&a, &b, epsilon).unwrap();
-    let x = results.solution;
-    let sum = x.sum();
-    for (i,v) in x.data.as_vec().into_iter().enumerate() {
-	let mut n = (i as i64)-(before as i64);
-	if n>=0 {n+=1};
-	eprintln!("{:3}h:{:7.4}",n,v);
+    if cols2!=nb_holes || rows2!=rows {panic!("zorglub")}
+
+    let mr = DMatrix::from_row_slice(rows2,cols2,&v2);
+    let mut vx = Vec::new();
+    for num in 0..cols2 {
+        let vb = mr.column(num);
+        let b = DVector::from(vb);
+        let epsilon = 1e-14;
+        let results = lstsq::lstsq(&a, &b, epsilon).unwrap();
+        let x = results.solution;
+        vx.push(x.clone());
+        let sum = x.sum();
+        for (i,v) in x.data.as_vec().iter().enumerate() {
+	    let mut n = (i as i64)-(before as i64);
+	    if n>=0 {n+=1};
+	    eprintln!("{:3}h:{:7.4}",n,v);
+        }
+        eprintln!("coeffs sum: {}\nRMSE_learn: {}",sum,(results.residuals/(rows as f64)).sqrt());
     }
-    eprintln!("coeffs sum: {}\nRMSE_learn: {}",sum,(results.residuals/(rows as f64)).sqrt());
 
     let (v1,rows,cols) = read_numbers_from_file("../anes/source_test.txt").unwrap();
     let a = DMatrix::from_row_slice(rows,cols,&v1);
     let (v2,rows2,cols2) = read_numbers_from_file("../anes/obj_test.txt").unwrap();
-    if cols2!=1 || rows2!=rows {panic!("zorglub")}
-    let b = DVector::from_row_slice(&v2);
-    let r = &a * &x - &b;
-    let n = r.norm();
-    let v = (n*n / (rows as f64)).sqrt();
-    eprintln!("RMSE_test : {:?}",v);
+    if cols2!=nb_holes || rows2!=rows {panic!("zorglub")}
+    let mr = DMatrix::from_row_slice(rows2,cols2,&v2);
+    for num in 0..cols2 {
+        let vb = mr.column(num);
+        let b = DVector::from(vb);
+        let x = &vx[num];
+        let sum = x.sum();
+        let r = &a * x - &b;
+        let n = r.norm();
+        let v = (n*n / (rows as f64)).sqrt();
+        eprintln!("RMSE_test : {:?}",v);
 
-//    let nx = DVector::from_element(cols,1.0);
-    let nx = &x / sum;
-    let r = &a * &nx - &b;
-    let n = r.norm();
-    let v = (n*n / (rows as f64)).sqrt();
-    eprintln!("norm_vec:{:?}\nRMSE_test_norm_vec: {:?}",nx.data.as_vec(),v);
+        let nx = x / sum;
+        let r = &a * &nx - &b;
+        let n = r.norm();
+        let v = (n*n / (rows as f64)).sqrt();
+        eprintln!("norm_vec:{:?}\nRMSE_test_norm_vec: {:?}",nx.data.as_vec(),v);
+
+    }
 }
+
