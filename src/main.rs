@@ -346,7 +346,7 @@ fn main() {
             "Number of values after the value to predict (Default: 5)",
         );
         ap.refer(&mut fsigma).add_option(
-            &["-f", "--fsigma"],
+            &["-s", "--sigma"],
             Store,
             "Sigma multiplier for select (Default: 2.0)",
         );
@@ -366,7 +366,7 @@ fn main() {
             "Use tainted normalization (default: Local)",
         );
         ap.refer(&mut seed).add_option(
-            &["-s", "--seed"],
+            &["-r", "--rseed"],
             Store,
             "Seed of random number generator (Default: 0)",
         );
