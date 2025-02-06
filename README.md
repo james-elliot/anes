@@ -15,6 +15,7 @@ Options are the following
     -c,--csv              Use csv format instead of parquet format (default: false)
     -n,--name NAME        Name of the variable to process (Default: pam)
     -p,--proba PROBA      Percentage of the dataset used for learning (Default: 0.8)
+    -m,--missing MISSING  Number of consecutive missing values to predict (Default: 1)
     -b,--before BEFORE    Number of values before the value to predict (Default: 5)
     -a,--after AFTER      Number of values after the value to predict (Default: 5)
     -f,--fsigma FSIGMA    Sigma multiplier for select (Default: 2.0)
