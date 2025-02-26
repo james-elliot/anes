@@ -461,8 +461,8 @@ fn main() {
         let sum = x.sum();
         for (i,v) in x.data.as_vec().iter().enumerate() {
 	    let mut n = (i as i64)-(before as i64);
-	    if n>=0 {n+=1};
-	    eprintln!("{:3}h:{:7.4}",n,v);
+	    if n>=0 {n+=cols2 as i64};
+	    eprintln!("{:3}h:{:7.4}",n-num as i64,v);
         }
         eprintln!("coeffs sum: {}\nRMSE_learn: {}",sum,(results.residuals/(rows as f64)).sqrt());
     }
