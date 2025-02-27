@@ -1,5 +1,4 @@
 import torch
-import math
 dtype = torch.float
 #device_name="cpu"
 device_name="cuda:0"
@@ -27,7 +26,7 @@ print("finished loading obj test")
 x_test = torch.tensor(l_in_test,device=device,dtype=dtype)
 y_test = torch.tensor(l_out_test,device=device,dtype=dtype)
 
-D_in, H1, H2,D_out = x[0].size()[0], 20, 20,y[0].size()[0]
+D_in, H1, H2,D_out = x[0].size()[0], 200, 200,y[0].size()[0]
 model = torch.nn.Sequential(
     torch.nn.Linear(D_in, H1),
     torch.nn.Sigmoid(),
@@ -47,11 +46,15 @@ for t in range(200000):
     loss.backward()
     optimizer.step()
     if t % 100 == 99:
-        print(t, "MSE_learn:",loss.item())
+        print(t, loss.item())
+        component_losses = ((y_pred - y) ** 2).mean(dim=0).sqrt()
+        print(t, "MSE LEARN:",loss.item())
+        print(t,"Components RMSE LEARN:", component_losses.cpu().tolist())
         y_pred_test = model(x_test)
         loss2 = loss_fn(y_pred_test, y_test)
-        v=loss2.item()
-        print(t, "RMSE_test:",math.sqrt(v))
+        component_losses = ((y_pred_test - y_test) ** 2).mean(dim=0).sqrt()
+        print(t, "MSE TEST",loss2.item())
+        print(t,"Components RMSE TEST:", component_losses.cpu().tolist())
         if loss.item()<1e-6:break
 y_pred=model(x)
 print(x)
